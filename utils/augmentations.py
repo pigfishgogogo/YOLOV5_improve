@@ -187,9 +187,9 @@ def random_perspective(im,
     # Combined rotation matrix
     M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
     if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
-        if perspective:
+        if perspective:  # 默认是 0   进不去  透视变换之后原来相互平行的边不再平行，而仿射变换则还保持平行
             im = cv2.warpPerspective(im, M, dsize=(width, height), borderValue=(114, 114, 114))
-        else:  # affine
+        else:  # affine     ----debug时候进入下面仿射变换，im这个经过4张图片mosaic拼接的图片从(1280,1280,3) 处理后变回 (640,640,3)
             im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
     # Visualize
@@ -203,7 +203,7 @@ def random_perspective(im,
     if n:
         use_segments = any(x.any() for x in segments) and len(segments) == n
         new = np.zeros((n, 4))
-        if use_segments:  # warp segments
+        if use_segments:  # warp segments    进不去
             segments = resample_segments(segments)  # upsample
             for i, segment in enumerate(segments):
                 xy = np.ones((len(segment), 3))
@@ -237,10 +237,10 @@ def random_perspective(im,
     return im, targets
 
 
-def copy_paste(im, labels, segments, p=0.5):
+def copy_paste(im, labels, segments, p=0.5):  # 这个copy_paste函数是将魔杖图片中的实力分割目标抠图出来粘贴到另一张图上，本训练没用上
     # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
-    n = len(segments)
-    if p and n:
+    n = len(segments)  # n=0  segments是空list  []
+    if p and n:  # 进不去   p是hyp.scratch-low.yaml中的copy_paste超参数为0， 而n又是0   这里if是0    所以没有上 copy_paste()函数
         h, w, c = im.shape  # height, width, channels
         im_new = np.zeros(im.shape, np.uint8)
         for j in random.sample(range(n), k=round(p * n)):

@@ -164,43 +164,43 @@ class BaseModel(nn.Module):
 
 class DetectionModel(BaseModel):
     # YOLOv5 detection model
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes  train.py首次构建model进入这里时nc=2，anchors=None（有预训练权重的时候没anchor）
         super().__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
-        else:  # is *.yaml
+        else:  # is *.yaml  如果是路径而不是字典那么读取路径并   用yaml.safe_load() 读取路径yaml文件转为dict存放到self.yaml 成员变量中
             import yaml  # for torch hub
             self.yaml_file = Path(cfg).name
             with open(cfg, encoding='ascii', errors='ignore') as f:
                 self.yaml = yaml.safe_load(f)  # model dict
 
         # Define model
-        ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        if nc and nc != self.yaml['nc']:
+        ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels  获取yolov5s.yaml中的ch参数，没有的话就用实参，实参没传入就是默认的ch=3
+        if nc and nc != self.yaml['nc']:  # 假如：配置文件中nc时80，而自己训练输入arges是2，忘了该yaml配置文件，这里会使用命令行参数 2，而不是配置文件的80，并打印此问题
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
-        if anchors:
+        if anchors:  # train.py中首次构建model一般又预训练权重yolov5s.pt所以用checkpoints而不是yolov5s.yaml来搭建模型，没anchor，即anchor是None  这里不进入
             LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
             self.yaml['anchors'] = round(anchors)  # override yaml value
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
-        self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
+        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist（要保存结果的层）  -----------------构建模型函数！！！！！！---------------
+        self.names = [str(i) for i in range(self.yaml['nc'])]  # default names  暂时初始化类名  为数字0、1
         self.inplace = self.yaml.get('inplace', True)
 
         # Build strides, anchors
-        m = self.model[-1]  # Detect()
-        if isinstance(m, (Detect, Segment)):
-            s = 256  # 2x min stride
-            m.inplace = self.inplace
+        m = self.model[-1]  # Detect() m=ModuleList(0: Conv2d(128, 21, kernel_size=(1, 1), stride=(1, 1))，1: Conv2d(256, 21, kernel_size=(1, 1), stride=(1, 1)) ，2: Conv2d(512, 21, kernel_size=(1, 1), stride=(1, 1)) )
+        if isinstance(m, (Detect, Segment)):  # ----进  这个if里面就做了一件事：那一张空图片跑一便模型，测出3个yolo检测头分别降采样多少，一般是[8,16,32]
+            s = 256  # 2x min stride  #
+            m.inplace = self.inplace   # True
             forward = lambda x: self.forward(x)[0] if isinstance(m, Segment) else self.forward(x)
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
-            check_anchor_order(m)
-            m.anchors /= m.stride.view(-1, 1, 1)
+            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward  tensor([8., 16., 32.])
+            check_anchor_order(m)  # 检查anchor是否和自己要放在的那个yolo层一致，如果顺序不对这里会调整好
+            m.anchors /= m.stride.view(-1, 1, 1)  # 将anchor按照各自降采样倍数缩小到 对应的yolo层特征图大小
             self.stride = m.stride
             self._initialize_biases()  # only run once
 
         # Init weights, biases
         initialize_weights(self)
-        self.info()
+        self.info()  # 打印：YOLOv5s summary: 214 layers, 7025023 parameters, 7025023 gradients, 16.0 GFLOPs
         LOGGER.info('')
 
     def forward(self, x, augment=False, profile=False, visualize=False):
