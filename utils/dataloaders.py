@@ -427,7 +427,7 @@ class LoadStreams:
 
 def img2label_paths(img_paths):
     # Define label paths as a function of image paths
-    sa, sb = f'{os.sep}images{os.sep}', f'{os.sep}labels{os.sep}'  # /images/, /labels/ substrings
+    sa, sb = f'{os.sep}tomato_images{os.sep}', f'{os.sep}tomato_labels{os.sep}'  # /images/, /labels/ substrings
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 
@@ -496,7 +496,7 @@ class LoadImagesAndLabels(Dataset):
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
         if exists and LOCAL_RANK in {-1, 0}:
             d = f'Scanning {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt'
-            tqdm(None, desc=prefix + d, total=n, initial=n, bar_format=TQDM_BAR_FORMAT)  # display cache results
+            tqdm(None, desc=prefix + d, total=n, initial=n, bar_format=TQDM_BAR_FORMAT)  # display cache results 打印读取缓存图片一些信息
             if cache['msgs']:
                 LOGGER.info('\n'.join(cache['msgs']))  # display warnings
         assert nf > 0 or not augment, f'{prefix}No labels found in {cache_path}, can not start training. {HELP_URL}'
@@ -512,7 +512,7 @@ class LoadImagesAndLabels(Dataset):
         self.label_files = img2label_paths(cache.keys())  # update
 
         # Filter images
-        if min_items:
+        if min_items:  # 不进入
             include = np.array([len(x) >= min_items for x in self.labels]).nonzero()[0].astype(int)
             LOGGER.info(f'{prefix}{n - len(include)}/{n} images filtered from dataset')
             self.im_files = [self.im_files[i] for i in include]
@@ -521,15 +521,15 @@ class LoadImagesAndLabels(Dataset):
             self.segments = [self.segments[i] for i in include]
             self.shapes = self.shapes[include]  # wh
 
-        # Create indices
-        n = len(self.shapes)  # number of images
-        bi = np.floor(np.arange(n) / batch_size).astype(int)  # batch index
-        nb = bi[-1] + 1  # number of batches
+        # Create indices   给训练的所有图片 按照batch取上编号   比如前16张图的编号都是0，17到32张图片编号都是1以此类推
+        n = len(self.shapes)  # number of images  4064张训练图片
+        bi = np.floor(np.arange(n) / batch_size).astype(int)  # batch index  16个0然后16个1然后16个2一直到16个253的list 【0,0,0,0,...,1,1,...,2,2...,...253,253】
+        nb = bi[-1] + 1  # number of batches   batch_size的个数：254  4064➗16=254 一个epoch如果batch_size=16那么需要254个batch才能取完4064所有图片 取完所有图片就算一个epoch
         self.batch = bi  # batch index of image
         self.n = n
         self.indices = range(n)
 
-        # Update labels
+        # Update labels  #这一段代码是过滤不想检测的类的标签、只有一个类    这两种特殊情况训练集 的处理方式  不用管！！
         include_class = []  # filter labels to include only these classes (optional)
         self.segments = list(self.segments)
         include_class_array = np.array(include_class).reshape(1, -1)
@@ -568,11 +568,11 @@ class LoadImagesAndLabels(Dataset):
             self.batch_shapes = np.ceil(np.array(shapes) * img_size / stride + pad).astype(int) * stride
 
         # Cache images into RAM/disk for faster training
-        if cache_images == 'ram' and not self.check_cache_ram(prefix=prefix):
+        if cache_images == 'ram' and not self.check_cache_ram(prefix=prefix):  # 进不去
             cache_images = False
         self.ims = [None] * n
         self.npy_files = [Path(f).with_suffix('.npy') for f in self.im_files]
-        if cache_images:
+        if cache_images:  # 默认false  进不去  不用管
             b, gb = 0, 1 << 30  # bytes of cached images, bytes per gigabytes
             self.im_hw0, self.im_hw = [None] * n, [None] * n
             fcn = self.cache_images_to_disk if cache_images == 'disk' else self.load_image
@@ -657,15 +657,15 @@ class LoadImagesAndLabels(Dataset):
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
         if mosaic:
-            # Load mosaic
-            img, labels = self.load_mosaic(index)
+            # Load mosaic     下面这行代码 主要将4张图片拼接成一张图片，标签也相应改变  返回的是（640，640，3）的img和（n，5）的labels
+            img, labels = self.load_mosaic(index)  # 数据增强处理--------------------------------------------------------
             shapes = None
 
             # MixUp augmentation
-            if random.random() < hyp['mixup']:
+            if random.random() < hyp['mixup']:   # mixup超参数是0，  进不去
                 img, labels = mixup(img, labels, *self.load_mosaic(random.randint(0, self.n - 1)))
 
-        else:
+        else:  # 进不去
             # Load image
             img, (h0, w0), (h, w) = self.load_image(index)
 
@@ -688,11 +688,11 @@ class LoadImagesAndLabels(Dataset):
                                                  perspective=hyp['perspective'])
 
         nl = len(labels)  # number of labels
-        if nl:
+        if nl:  # mosaic的时候将labels变成了xyxy格式，这里变回去xywh
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1E-3)
 
-        if self.augment:
-            # Albumentations
+        if self.augment:  # 在train.py中创建dataloader的时候  就构造传入augment是 True，这里成员属性一直保持为True  ---- 进
+            # Albumentations   if中从这里往下每个小段都是数据增强的处理方法，不用深究
             img, labels = self.albumentations(img, labels)
             nl = len(labels)  # update after albumentations
 
@@ -723,7 +723,7 @@ class LoadImagesAndLabels(Dataset):
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return torch.from_numpy(img), labels_out, self.im_files[index], shapes
+        return torch.from_numpy(img), labels_out, self.im_files[index], shapes  # 返回img、labels、图片路径、shape（debug时shape是None）
 
     def load_image(self, i):
         # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
@@ -787,13 +787,13 @@ class LoadImagesAndLabels(Dataset):
             segments4.extend(segments)
 
         # Concat/clip labels
-        labels4 = np.concatenate(labels4, 0)
+        labels4 = np.concatenate(labels4, 0)  # 4张图拼成一张马赛克图片后经过过滤掉越界的框之后剩余的框的信息 （17，5）
         for x in (labels4[:, 1:], *segments4):
-            np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
+            np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()  如果指定要使用透视这里会切边边界处的框
         # img4, labels4 = replicate(img4, labels4)  # replicate
 
         # Augment
-        img4, labels4, segments4 = copy_paste(img4, labels4, segments4, p=self.hyp['copy_paste'])
+        img4, labels4, segments4 = copy_paste(img4, labels4, segments4, p=self.hyp['copy_paste'])  # 实际上进入copuy_paste函数没有干啥就出来了，本行代码可以认为直接跳过
         img4, labels4 = random_perspective(img4,
                                            labels4,
                                            segments4,
@@ -802,7 +802,7 @@ class LoadImagesAndLabels(Dataset):
                                            scale=self.hyp['scale'],
                                            shear=self.hyp['shear'],
                                            perspective=self.hyp['perspective'],
-                                           border=self.mosaic_border)  # border to remove
+                                           border=self.mosaic_border)  # border to remove   ---- debug时进入执行了warpaffine等
 
         return img4, labels4
 
