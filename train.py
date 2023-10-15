@@ -443,7 +443,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default=ROOT / 'pre_weights/yolov5n.pt', help='initial weights path')
-    parser.add_argument('--cfg', type=str, default='D:/My_WorkFiles/YOLO/YOLOv5-7.0/yolov5/models/yolov5n.yaml', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, default='D:/My_WorkFiles/YOLO/YOLOv5-7.0/yolov5/models/yolov5n_coordconv.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/fanqie.yaml', help='dataset.yaml')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-low.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=200, help='total training epochs')
